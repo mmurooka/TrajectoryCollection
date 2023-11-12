@@ -46,7 +46,29 @@ inline Eigen::Matrix3d interpolate(const Eigen::Matrix3d & start, const Eigen::M
 template<>
 inline sva::PTransformd interpolate(const sva::PTransformd & start, const sva::PTransformd & end, double ratio)
 {
-  return sva::interpolate(start, end, ratio);
+  Eigen::Vector3d startPos = start.translation();
+  Eigen::Vector3d endPos = end.translation();
+  Eigen::Vector3d startNormal = (start.rotation().row(0).cross(Eigen::Vector3d::UnitZ())).normalized();
+  Eigen::Vector3d endNormal = (end.rotation().row(0).cross(Eigen::Vector3d::UnitZ())).normalized();
+
+  constexpr double parallelDotThre = 1e-10;
+  if(std::abs(startNormal.dot(endNormal)) > 1.0 - parallelDotThre)
+  {
+    return sva::interpolate(start, end, ratio);
+  }
+
+  // Ref: http://www.info.hiroshima-cu.ac.jp/~miyazaki/knowledge/tech0044.html
+  Eigen::Vector3d centerPos =
+      0.5
+      * (startPos + endPos
+         + (((startNormal - (startNormal.dot(endNormal) * endNormal)).dot(endPos - startPos)) * startNormal
+            - ((endNormal - (startNormal.dot(endNormal) * startNormal)).dot(endPos - startPos)) * endNormal)
+               / (1.0 - std::pow(startNormal.dot(endNormal), 2)));
+  sva::PTransformd relTrans = start * sva::PTransformd(start.rotation(), centerPos).inv();
+  return relTrans
+         * sva::PTransformd(
+             interpolate<Eigen::Matrix3d>(start.rotation().transpose(), end.rotation().transpose(), ratio).transpose(),
+             centerPos);
 }
 
 /** \brief Calculate the derivative value interpolating from start to end.
